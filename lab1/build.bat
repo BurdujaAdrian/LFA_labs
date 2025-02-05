@@ -2,6 +2,6 @@
 
 echo building exe...
 
-odin build . -out:main.exe -o:minimal -strict-style %1
+odin build . -out:main.exe -strict-style %1
 
 pause
