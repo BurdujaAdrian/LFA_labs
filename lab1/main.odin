@@ -1,4 +1,4 @@
-#+feature !dynamic-literals
+#+feature dynamic-literals
 
 package main
 
@@ -13,7 +13,7 @@ when ODIN_DEBUG {print :: fmt.println
 
 
 main :: proc(){
-	gr := init_grammer(
+	gr := init_grammar(
 		patterns  = {
 			{"S","bS"},
 			{"S","d"},
@@ -31,25 +31,93 @@ main :: proc(){
 	printf("%#v",gr)
 
 	//tests()
-	strings := generate_string(&gr)
-	fmt.println(strings)
-
+	//strings := generate_string(&gr)
+	//fmt.println(strings)
+	
+	aut := automaton_from_grammar(&gr)
+	fmt.printf("\n %#v",aut)
 
 }
 
+Automaton :: struct{
+	// state data
+	curr_state  :u8,
+
+	// metadata
+	states      : u8,//n of states, 
+	transitions : [][dynamic]map[string]u8, // array of states, each state having a map from string to another state
+	//alphabet    : []string, // is not needed, it's fully contained within transitions
+	initial     : u8, // initial state
+	finals       : bit_set[0..<16;u16], // bit-flags for if final[state] is a final state, assume at most 16 different states
+}
+
+automaton_from_grammar :: proc(gr:^Grammar)->(aut:Automaton){
+	// allocate memory for the array of arrays of state transitions
+	aut.states = auto_cast len(gr.terminals)
+	aut.transitions = make_slice([][dynamic]map[string]u8, aut.states-1 )// there are no transitions from final state = aut.stetes
+	
+	// construct a mapping from non_terminals(string) to states(u8)
+	stoi_map := make(map[string]u8)
+	defer delete(stoi_map)
+
+	for str,i in gr.non_term{
+		stoi_map[str] = auto_cast i
+	}
+	
+	// map empty string to Final state, 
+	// when the pattern doesn't contain a non_term, the non_term string is ""
+	stoi_map[""] = aut.states-1
+	
+	print("current mapping: ",stoi_map)
+
+	for &trans,state in &aut.transitions{
+		
+		trans = make([dynamic]map[string]u8)
+		
+		print("\ngenerating trans for :",state)
+		key:=gr.non_term[state]
+		value:= gr.patterns[key]
+		print("	key:",key, " value:",value)
+		for ptrn in value{
+			// if pattern has a non_t, set the corresponding bit in the bit_set
+			if ptrn.b {
+				aut.finals += {int(stoi_map[key])}
+			}
+
+			// assume terminal is on the left
+			
+			append(	&trans, map[string]u8{
+				ptrn.str[0:1] = stoi_map[ ptrn.str[1:len(ptrn.str)] ], 
+			})
+		}
+		
+		print("transitions for ", state, trans)
+	}
+	
+	when ODIN_DEBUG {
+		for state in gr.non_term{
+			print("state :",state, stoi_map[state])
+			print("	maps :",aut.transitions[stoi_map[state]])
+		}
+	}
+	
+
+	return
+}
+
 string_bool :: struct{str:string,b:bool}
-Grammer :: struct{
+Grammar :: struct{
 	patterns    : map[string][dynamic]string_bool,// a map from key:str to val:array(slice) of strings with flag for if they have a non_term
 	non_term    : []string,
 	terminals   : []string,
 	start       : string, 
 }
-init_grammer :: proc(
+init_grammar :: proc(
 	patterns:[][2]string, 
 	terminals:[]string, 
 	non_term:[]string, 
 	start:string,
-)->(gr : Grammer){
+)->(gr : Grammar){
 	gr.terminals = terminals
 	gr.non_term = non_term
 	gr.start = start
@@ -75,7 +143,7 @@ init_grammer :: proc(
 	return
 }
 
-generate_string :: proc(gr:^Grammer)->[]string{
+generate_string :: proc(gr:^Grammar)->[]string{
 	strings := make_slice([]string,5)
 	
 	for &string in &strings {
@@ -115,12 +183,7 @@ generate_string :: proc(gr:^Grammer)->[]string{
 	return strings
 }
 
-//Automaton :: struct{
-//	states : [dynamic]u8,//dynamic array of char's
-//	transitions : map[string]string,
-//	initial: string,
-//	final  : []string,
-//}
+
 
 Syl :: struct{
 	txt	: string,
