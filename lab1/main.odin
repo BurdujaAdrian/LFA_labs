@@ -51,7 +51,7 @@ main :: proc(){
 
 AutErr :: enum {
 	INVALID_INPUT,
-	INVALID_UTF8,
+	// other possible errors, if needed
 }
 Automaton :: struct{
 	// state data
@@ -62,14 +62,12 @@ Automaton :: struct{
 	transitions : []map[string]u8, // array of states, each state having a map from string to another state
 	//alphabet    : []string, // is not needed, it's fully contained within transitions
 	initial     : u8, // initial state
-	finals       : bit_set[0..<16;u16], // bit-flags for if final[state] is a final state, assume at most 16 different states
+	finals      : bit_set[0..<16;u16], // bit-flags for if (state in finals), assume at most 16 different states
 }
 
-//returns false if it cannot interpret the input
 run :: proc(aut:^Automaton, inputs: string)->AutErr{
 	
 	aut.curr_state = aut.initial 
-
 
 	for i := 0 ; i < len(inputs); i+=1  {
 		input := inputs[i:i+1]
@@ -88,9 +86,7 @@ run :: proc(aut:^Automaton, inputs: string)->AutErr{
 		}
 		aut.curr_state = next_state
 	}
-
 	return nil
-
 }
 
 automaton_from_grammar :: proc(gr:^Grammar)->(aut:Automaton){
@@ -106,7 +102,7 @@ automaton_from_grammar :: proc(gr:^Grammar)->(aut:Automaton){
 		stoi_map[str] = auto_cast i
 	}
 	
-	// map empty string to Final state, 
+	// maps empty string to Final state, 
 	// when the pattern doesn't contain a non_term, the non_term string is ""
 	stoi_map[""] = aut.states-1
 	
@@ -129,20 +125,17 @@ automaton_from_grammar :: proc(gr:^Grammar)->(aut:Automaton){
 			// assume terminal is on the left
 			
 			trans[ptrn.str[0:1]] = stoi_map[ ptrn.str[1:len(ptrn.str)]]
-			
 		}
 		
 		print("transitions for ", state, trans)
 	}
 	
-	when ODIN_DEBUG {
+	when ODIN_DEBUG { //compile time directive
 		for state in gr.non_term{
 			print("state :",state, stoi_map[state])
 			print("	maps :",aut.transitions[stoi_map[state]])
 		}
 	}
-	
-
 	return
 }
 
@@ -224,7 +217,7 @@ generate_string :: proc(gr:^Grammar)->[]string{
 	return strings
 }
 
-
+//@auxiliarry functions
 
 Syl :: struct{
 	txt	: string,
@@ -336,7 +329,7 @@ insert_list :: proc(start:^Syl, list:[]string)->(last:^Syl){
 }
 
 
-//@auxiliarry functions
+
 
 contains_any_from_list :: proc(s:string, list:[]string)->string{
 	for substr in list{if str.contains(s,substr) {return substr}}
