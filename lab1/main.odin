@@ -4,6 +4,7 @@ package main
 
 import "core:fmt"
 import "core:math/rand"
+import "core:unicode/utf8"
 import str"core:strings"
 
 when ODIN_DEBUG {print :: fmt.println
@@ -30,31 +31,72 @@ main :: proc(){
 		start = "S")
 	printf("%#v",gr)
 
-	//tests()
-	//strings := generate_string(&gr)
-	//fmt.println(strings)
+	fmt.printf("generated grammer structure: %#v\n",gr)
+	strings := generate_string(&gr)
+	fmt.println(strings)
 	
 	aut := automaton_from_grammar(&gr)
-	fmt.printf("\n %#v",aut)
+	fmt.printf("\n %#v\n\n",aut)
+	for input in strings{
+		fmt.println("attempting to run input: ",input)
+		err := run(&aut,input)
+		if err != nil{
+			print(err)
+		} else {
+			print(input, "is valid aut input\n")
+		}
+	}
 
 }
 
+AutErr :: enum {
+	INVALID_INPUT,
+	INVALID_UTF8,
+}
 Automaton :: struct{
 	// state data
 	curr_state  :u8,
 
 	// metadata
 	states      : u8,//n of states, 
-	transitions : [][dynamic]map[string]u8, // array of states, each state having a map from string to another state
+	transitions : []map[string]u8, // array of states, each state having a map from string to another state
 	//alphabet    : []string, // is not needed, it's fully contained within transitions
 	initial     : u8, // initial state
 	finals       : bit_set[0..<16;u16], // bit-flags for if final[state] is a final state, assume at most 16 different states
 }
 
+//returns false if it cannot interpret the input
+run :: proc(aut:^Automaton, inputs: string)->AutErr{
+	
+	aut.curr_state = aut.initial 
+
+
+	for i := 0 ; i < len(inputs); i+=1  {
+		input := inputs[i:i+1]
+		
+		fmt.println("	current input: ", input)
+		
+		if aut.curr_state == aut.states - 1 {
+			fmt.println("	reached final state, exiting")
+			return nil
+		}
+		next_state, ok := aut.transitions[aut.curr_state][input]
+
+		if !ok {// input isnt a key in map, so it's an error
+			fmt.println("	",input," is invalid")
+			return .INVALID_INPUT
+		}
+		aut.curr_state = next_state
+	}
+
+	return nil
+
+}
+
 automaton_from_grammar :: proc(gr:^Grammar)->(aut:Automaton){
 	// allocate memory for the array of arrays of state transitions
 	aut.states = auto_cast len(gr.terminals)
-	aut.transitions = make_slice([][dynamic]map[string]u8, aut.states-1 )// there are no transitions from final state = aut.stetes
+	aut.transitions = make_slice([]map[string]u8, aut.states-1 )// there are no transitions from final state = aut.stetes
 	
 	// construct a mapping from non_terminals(string) to states(u8)
 	stoi_map := make(map[string]u8)
@@ -72,7 +114,7 @@ automaton_from_grammar :: proc(gr:^Grammar)->(aut:Automaton){
 
 	for &trans,state in &aut.transitions{
 		
-		trans = make([dynamic]map[string]u8)
+		trans = make(map[string]u8)
 		
 		print("\ngenerating trans for :",state)
 		key:=gr.non_term[state]
@@ -86,9 +128,8 @@ automaton_from_grammar :: proc(gr:^Grammar)->(aut:Automaton){
 
 			// assume terminal is on the left
 			
-			append(	&trans, map[string]u8{
-				ptrn.str[0:1] = stoi_map[ ptrn.str[1:len(ptrn.str)] ], 
-			})
+			trans[ptrn.str[0:1]] = stoi_map[ ptrn.str[1:len(ptrn.str)]]
+			
 		}
 		
 		print("transitions for ", state, trans)
