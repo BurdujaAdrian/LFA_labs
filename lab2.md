@@ -177,7 +177,10 @@ Where each index in the list of transitions is a state
 
 
 ## References
-
+[source code](https://github.com/BurdujaAdrian/LFA_labs/tree/main/lab2)
 [Resources relatedd to linear Regular Grammars](https://www.geeksforgeeks.org/right-and-left-linear-regular-grammars/)
-
 [Definition of context-free grammar](https://en.wikipedia.org/wiki/Context-free_grammar)
+
+
+
+
