@@ -89,8 +89,20 @@ implemented.
 
 A ```Token``` is a struct 
 ## Conclusions / Screenshots / Results
+This project successfully implemented a basic lexer for a domain-specific language (DSL) using Odin's features 
+like structs, dynamic arrays, and stream processing. The lexer demonstrates core principles of lexical analysis 
+by tokenizing integers, strings, identifiers, and delimiters while tracking token positions (line and column 
+numbers) for future error reporting.
 
-I used the program to parse lab3/demo.mtex and got the result that is in result.txt
+The state-machine approach with .NONE, .STRING, .IDENTIFIER, etc., proved effective for managing parsing context.
+The stream-based character-by-character processing ensures compatibility with UTF-8 input, while helper functions
+like is_delim maintain readability when checking for delimiter characters.
+
+Key challenges included handling edge cases like escaped characters in string literals and ensuring seamless state
+transitions. The implementation of a global token_stream dynamic array provides a straightforward way to collect 
+tokens for later processing by a parser.
+
+I used the program to parse lab3/demo.mtex and got the result that is in result.txt.
 
 ## References
 [1] [A sample of a lexer implementation](https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl01.html)
