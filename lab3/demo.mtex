@@ -1,0 +1,18 @@
+scale with(oct/octave) = | oct , 4/4, <minor/major notes> :
+	do re mi fa | sol la si do :| 
+
+
+london_bridge_is =  sol la sol si 
+
+falling_down = mi fa sol-4
+
+falling_down2 = re mi fa-4 
+
+my_fair = re-4 si-4
+
+lady = mi do-4.
+
+
+piano "london bridge": 
+   | 4, : london_bridge_is | falling_down | falling_down2 | falling_down |
+   	  london_bridge_is | falling_down |    my_fair    |      lady   :|
