@@ -43,7 +43,7 @@ main :: proc(){
 	fstream :bio.Reader
 	bio.reader_init_with_buf(&fstream, fs,buffer)
 
-	for start := 0 ; true ; {
+	loop: for start := 0 ; true ; {
 		switch parse_state {
 		case .NONE	: start = parse_none(&fstream); continue 
 		case .IDENTIFIER: start = parse_iden(&fstream)
@@ -53,11 +53,14 @@ main :: proc(){
 		case .EOF	: break
 		}
 
+
+
 		if fstream.r == 0 {print("end of file"); break}
+
 
 	}
 
-	print_tokens(true)
+	print_tokens()
 }
 
 
@@ -121,6 +124,7 @@ parse_delm :: #force_inline proc(stream:^bio.Reader)->int{
 			string(stream.buf[stream.r-1:stream.r]),
 			curr_line,
 		)
+		//os.exit(1)
 	}
 
 
@@ -139,44 +143,7 @@ parse_delm :: #force_inline proc(stream:^bio.Reader)->int{
 }
 
 parse_strl :: #force_inline proc(stream:^bio.Reader)->(start:int){
-	start = stream.r
-	str_len := 1
-	local_state := Parse_state.NONE
-	escaped := false
-
-	loop: for {
-		curr,n,_ := bio.reader_read_rune(stream)
-		curr_n   +=1
-
-		switch curr {
-		case '\n' : curr_line+=1; curr_n = 0
-		case '\\' : escaped = true
-		case '"'  : 
-			if escaped{
-				escaped = false
-				break
-			}
-			break loop
-		}
-
-
-		
-
-		if n == 0 {local_state= .EOF; break loop}
-		str_len+=1
-	}
-	append(&token_stream, Token{
-		str = string(stream.buf[start-1:start+str_len]),
-		line= curr_line,
-		n   = curr_n,
-		type= .STRING,
-	})
-
-	print(token_stream[len(token_stream) -1])
-
-	parse_state = local_state
-	return
-
+	panic("implement parse strl")
 }
 
 parse_numr :: #force_inline proc(stream:^bio.Reader)->(start:int){
@@ -280,7 +247,7 @@ parse_none :: #force_inline proc(stream:^bio.Reader)->(start:int){
 
 		case '0'..='9' : parse_state = .NUMERIC; return
 		
-		case '"' :  parse_state = .STRING; return
+		//case '"' :  parse_state = .STRING; return
 		}
 
 		if is_delim(string(stream.buf[start+i:start+n+i])){
@@ -289,7 +256,8 @@ parse_none :: #force_inline proc(stream:^bio.Reader)->(start:int){
 		}
 
 		if n == 0 {parse_state= .EOF; return}
-	}
+
+		}
 
 	fmt.printf(
 		"Unsuported character for identifiers: %s",
@@ -381,7 +349,7 @@ Token_type :: enum u8{
 }
 
 
-print_tokens :: proc($verbose:bool){
+print_tokens :: proc(){
 	last_line := token_stream[0].line
 
 	for token in token_stream {
@@ -389,10 +357,7 @@ print_tokens :: proc($verbose:bool){
 			fmt.println()
 			last_line +=1
 		}
-
-		when verbose { 
-			fmt.printf("<%v : %v>",token.type, token.str)
-		} else {fmt.printf("<%v> ",token.str)}
+		fmt.printf("<%v> ",token.str)
 
 	}
 }

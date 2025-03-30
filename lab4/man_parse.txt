@@ -1,0 +1,29 @@
+(a|b)(c|d)E+G?
+
+---
+(
+
+ex_stack = (,
+
+---
+a
+
+ex_stack = (,a
+
+---
+|
+
+ex_stack = (,a,|
+
+---
+b
+
+ex_stack = (,a,|,b
+
+ex_stack = (, <a|b>
+---
+)
+
+ex_stack = 
+
+
