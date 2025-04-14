@@ -81,12 +81,6 @@ normalize :: proc(gr:^Grammar)->(new_gr:Grammar){
 
 	// remove productions of form N_a -> N_b
 	remove_unit(&new_gr)
-
-	finished := false
-	for !finished {
-		finished = true
-	}
-
 	return
 }
 
@@ -160,7 +154,7 @@ new_unit :: proc(set:[dynamic]string)->string{
 			return unit
 		}
 	}
-
+	// mandatory return statement despite being inaccesable
 	return ""
 }
 
