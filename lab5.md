@@ -91,6 +91,32 @@ normalize :: proc(gr:^Grammar)->(new_gr:Grammar){
 I have used this sequence of transformation to be able to convert the grammar in one
 pass.
 
+```get_patterns_and_non_term``` is a function that recursivly checks the productions 
+from a given simbol to find which non terminal it leads to, this way it eliminates
+non-productive symbols.
+
+
+```fix_start``` adds a new start non terminal that simply produces the old symbol.
+
+
+```remove_nons``` finds all the productions that contain a non-solitary terminal.
+It then creates a new non-terminal, substitutes it for the terminal in the production
+and adds the corresponding production for that new non terminal.
+
+```remove_mult``` removes all productions of length 3 or more by creating a new non
+terminal that produces the 1st 2 symbols, substituting them with it and creating
+the new production. This process is repeated until no more changes are made.
+
+```remove_empty``` finds all the productions that yield a non terminal, then checks 
+if that symbol also has a "" production, if it does, it adds a new production to the
+current non terminal that does't contain the empty nonterminal, then it adds the non
+terminal to a list to be deleted later. This is repeased until no changes are made in
+one of the iterations.
+
+```remove_unit``` removes all unit productions by adding a new production to the 
+current non terminal for every production that unit had. This process is repeated 
+untill no changes are made.
+
 
 ```odin
 remove_mult :: #force_inline proc(gr:^Grammar){
