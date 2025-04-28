@@ -1,0 +1,1 @@
+ odin run . --strict-style -o:speed -- demo.mtex

@@ -1,0 +1,1 @@
+odin run . --debug --strict-style -out:debug_.exe -- demo.mtex
