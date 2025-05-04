@@ -13,11 +13,6 @@ ParseState :: enum {
 	STATEMENT, EOF,
 	// statements
 	S_MACRO_DEF, S_MOVEMENT, S_TRACK,
-	// collections
-	C_ARGS,	
-	
-	// Expressions
-	E_MACRO_APL,E_MACRO_INL,
 
 	// Error states
 	ERR,
@@ -120,12 +115,7 @@ parse :: proc(tokens:[]Token)->(ast:Ast){
 			ast.def[new_name] = Idt{id, .track}
 			ast.last_track_id = id
 
-		// collections
-		case .C_ARGS       : parse_args(&iter,&ast)
 
-		// Expressions
-		case .E_MACRO_APL  : parse_macro_apl(&iter,&ast)
-		case .E_MACRO_INL  : parse_macro_inl(&iter,&ast)
 		// Error states
 		case .ERR	   : parse_err(&iter,&ast)
 
@@ -136,6 +126,7 @@ parse :: proc(tokens:[]Token)->(ast:Ast){
 		print("output: ", str.to_string(output))
 		print("\n============\n")
 		wait_enter()
+		assert(len(parse_stack) < 2)
 	}
 
 	return
@@ -222,8 +213,11 @@ parse_statement :: proc(iter: ^Iter, ast: ^Ast){
 Ch_oct :: struct{source:Token,val:int}
 Pipe :: struct{source:Token}
 
+Ident :: struct{
+	source: Token,
+}
 Expr :: union{
-	UK_IDENT,
+	Ident,
 	Note,
 	Macro,
 	Expr_group,
@@ -253,7 +247,11 @@ parse_expr :: proc(iter: ^Iter, ast: ^Ast)->(expr: Expr){
 		os.exit(1)
 	case .ALPHANUM, .NUM:
 		print("\tprobably an expression: ",peek(iter))
-		expr = UK_IDENT{peek(iter)}
+		expr = Ident{peek(iter)}
+
+		if peek(iter,1).type == .OPEN_PAREN{
+			return parse_macro_apl(iter,ast)
+		} 
 		write(next(iter).str)
 		write(" ")
 	case .LESS_THAN, .GREATER_THAN :
@@ -332,12 +330,17 @@ parse_note :: proc(iter: ^Iter, ast: ^Ast)->(note:Note){
 
 Macro :: struct{
 	name : string,
-	args : [dynamic]string,
+	args : [dynamic]Expr,
 }
-parse_macro_apl :: proc(iter: ^Iter, ast: ^Ast){
-	assert(false)
+parse_macro_apl :: proc(iter: ^Iter, ast: ^Ast)-> (macro:Macro){
+	macro.args = make([dynamic]Expr)
+	macro.name = next(iter).str
+
+	argv,_:= parse_args(iter,ast)
+	macro.args = argv
+
+	return
 }
-parse_macro_inl :: proc(iter: ^Iter, ast: ^Ast){assert(false)}
 
 	Expr_group :: struct{
 		exprs : [dynamic]Expr,
@@ -364,9 +367,6 @@ parse_expr_group :: proc(iter: ^Iter, ast: ^Ast)->(group: Expr_group){
 //}
 
 
-UK_IDENT :: struct{
-	source: Token,
-}
 
 // @end_expr
 
@@ -486,11 +486,10 @@ parse_macro_def :: proc(iter: ^Iter, ast: ^Ast) -> (macro: Macro_def, name:strin
 		_ = next(iter) // consume token
 	
 	case .OPEN_PAREN: // there are argumetns
-		macro.args = parse_args(iter,ast)
+		_, macro.args = parse_args(iter,ast)
 		fmt.assertf(peek(iter).type == .EQUAL , "Expected equal after macro definition arguments, got %v indead",peek(iter))
 		write("= ")
 		_ = next(iter) // consume open paren
-		return
 	case : 
 		fmt.assertf(false, "Expected equal or open_paren after macro name, got %v instead", peek(iter))
 	}
@@ -502,7 +501,16 @@ parse_macro_def :: proc(iter: ^Iter, ast: ^Ast) -> (macro: Macro_def, name:strin
 		append(&macro.body,parse_expr(iter,ast))
 		if !has_keys {continue}
 
-		todo("write code that finds if the last expr is an arg")
+		curr_expr:= macro.body[len(macro.body)-1]
+		if ident,ok := curr_expr.(Ident); ok{
+			if _,ok := macro.args[ident.source.str]; ok{
+				
+			} else {
+				macro.args[ident.source.str] = make([dynamic]int)
+				pos := &macro.args[ident.source.str]
+				append(pos, len(macro.body) - 1)
+			}
+		}
 	}
 
 	write(";")
@@ -523,17 +531,39 @@ CapGroup :: struct{
 
 }
 
-parse_args :: proc(iter: ^Iter, ast: ^Ast)->(args:map[string][dynamic]int){
+parse_args :: proc(iter: ^Iter, ast: ^Ast)->(argv:[dynamic]Expr,args:map[string][dynamic]int){
 	args = make(map[string][dynamic]int)
+	argv = make([dynamic]Expr)
+
+	fmt.assertf(peek(iter).type == .OPEN_PAREN, "[Internal error]: called parse_args without args, token: ",peek(iter).type )
+	write(next(iter).str) // consume open paren
+
+	for {
+		if peek(iter).type == .CLOSE_PAREN {
+			// if found close paren
+			write(next(iter).str)
+			break
+		}
+
+		argx := parse_expr(iter,ast)
+		if ident,ok := argx.(Ident); ok{
+			arg_name := ident.source.str
+			args[arg_name] = make([dynamic]int)
+		}
+
+		append(&argv,argx)
+
+		if peek(iter).type == .COMMA{
+			write(next(iter).str) // consume token
+			continue
+		} 
+		fmt.assertf(peek(iter).type == .CLOSE_PAREN, "Arguments must be separated by , not : %v", peek(iter))
+	}
 	
-	todo("Make the parse args fucn")
+	return
 }
 
 
-
-// @Literals
-
-Literal :: union{}
 
 
 parse_err :: proc(iter: ^Iter, ast: ^Ast){assert(false)}

@@ -1,13 +1,13 @@
-london_bridge_is =  sol la+.7:4  < sol.6 si 
-#falling_down = mi fa sol:4
-#falling_down2 = re mi fa:4 
-#my_fair = re:4 si:4
-#lady = mi do:4
+london_bridge_is (arg1, arg2)=  sol la+.7:4  < sol.6 si 
+falling_down = mi fa sol:4
+falling_down2 = re mi fa:4 
+my_fair = re:4 si:4
+lady = mi do:4
 
 track "london bridge" :
 
 piano "main": [
-    london_bridge_is | falling_down | falling_down2 | falling_down |
+    london_bridge_is(do, re) | falling_down | falling_down2 | falling_down |
     #london_bridge_is | falling_down |    my_fair    |      lady    |
 ]
 
