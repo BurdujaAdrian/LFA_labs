@@ -51,7 +51,7 @@ parse :: proc(tokens:[]Token)->(ast:Ast){
 	loop: for  {
 		printf("\n\n\n============\n")
 		print("stack: ",parse_stack)
-		print("curr token: ", peek(&iter,0))
+		print("curr token: ", peek(&iter))
 		print("output: ", str.to_string(output),"\n")
 		
 		switch peek_stack(&parse_stack){
@@ -76,7 +76,7 @@ parse :: proc(tokens:[]Token)->(ast:Ast){
 		case .EOF          : break loop
 		}
 		print("stack: ",parse_stack)
-		print("curr token: ", peek(&iter,0))
+		print("curr token: ", peek(&iter))
 		print("output: ", str.to_string(output))
 		print("\n============\n")
 		wait_enter()
@@ -117,18 +117,18 @@ Statement :: union{
 }
 
 parse_statement :: proc(iter: ^Iter, ast: ^Ast){
-	curr_t := peek(iter,0)
+	curr_t := peek(iter)
 
 	#partial switch curr_t.type {
 
 	case .START:
 		next(iter)
 		write("progrm {")
-		fallthrough
 
 	case .ALPHANUM: 
 		print("found ident", curr_t)
 		next_t := peek(iter,1).type
+		print("next token:",next_t)
 		if next_t == .COLON{
 			print("Found movement")
 			append(&parse_stack, ParseState.S_MOVEMENT)
@@ -150,7 +150,10 @@ parse_statement :: proc(iter: ^Iter, ast: ^Ast){
 
 			print("found macro")
 			write("\nmacro:")
+			return
 		}
+
+		fmt.assertf(false, "next token doesn't correspond to the syntax of anything: %v", next_t)
 		
 
 	case .KW_TRACK:
@@ -173,8 +176,8 @@ parse_statement :: proc(iter: ^Iter, ast: ^Ast){
 		print("just a new line, skip")
 		write("\n")
 		_ = next(iter) // skipping the token
-	case : fmt.assertf(false, "expected kw_track for track, alphanum for movement or macro or eof, got: %v ",peek(iter,0).str) 
-		write(";")
+	case : 
+		fmt.assertf(false, "expected kw_track for track, alphanum for movement or macro or eof, got: %v ",peek(iter).str) 
 		
 	}
 
@@ -189,31 +192,43 @@ Expr :: struct{
 }
 
 parse_expr :: proc(iter: ^Iter, ast: ^Ast){
-	print("\tparsing expression: ", peek(iter,0))
-	#partial switch peek(iter,0).type{
+	print("\tparsing expression: ", peek(iter))
+	#partial switch peek(iter).type{
 	// case .SEMICOLON : 
 	//
-	// 	str.write_string(&output, ">")
 	case .OPEN_BRACKET : 
 		write("[")
 		print("\tnow try parsing expr group")
 		parse_expr_group(iter,ast)
-		return
 	case .CLOSE_BRACKET:
 		print("\tshouldnt get here")
 		os.exit(1)
 
 	case .NOTE_DO ..= .NOTE_SI : 
-		print("\tnow try parsing note")
+		print("\tnow try parsing note: ", peek(iter).type)
+		fmt.assertf(peek(iter).type != .NL, "a nl isnt a note")
 		parse_note(iter,ast)
-		return
 	case .NL , .SEMICOLON:
-		print("\tnot an expression: ", peek(iter,0) )
+		print("\tnot an expression: ", peek(iter) )
 		os.exit(1)
-	case :
-		print("\tparsing unnacounted token in parse_expr: ", peek(iter,0))
+	case .ALPHANUM, .NUM:
+		print("\tprobably an expression: ",peek(iter))
 		write(next(iter).str)
+		write(" ")
+	case .LESS_THAN, .GREATER_THAN :
+		print("\tthis is an expression: ",peek(iter).str)
+		write(next(iter).str)
+		write(" ")
+	case .PIPE:
+		print("\tjust a pipe")
+		write(fmt.aprintf(" %v ",next(iter).str))
+
+	case :
+		print("\tparsing unnacounted token in parse_expr: ", peek(iter))
+		fmt.assertf(false, "Unexpected token for expression: %v ", peek(iter))
 	}
+
+	write(" ")
 }
 Any_expr :: union{
 	Note,
@@ -239,28 +254,30 @@ Any_expr :: union{
 	//}
 parse_note :: proc(iter: ^Iter, ast: ^Ast){
 	write("$")
+	print("note: ", peek(iter))
 	write(next(iter).str)
-	curr : Token_type = next(iter).type
 
-	for curr == .PLUS  || curr == .DASH {
-		write(peek(iter,0).str)
-		curr = next(iter).type
+	for curr := peek(iter); 
+	    curr.type == .PLUS  || curr.type == .DASH; 
+	    curr = peek(iter)  {
+		write(next(iter).str)
 	}
 
-	if peek(iter,0).type == .NUM{
-		print("\t\tfound octave", next(iter))
-		str.write_string(&output, peek(iter,0).str )
+
+	if peek(iter).type == .NUM{
+		print("\n\t\tfound octave", peek(iter).str )
+		write(next(iter).str)
 	}
 	
-	if peek(iter,0).type == .COLON{
-		_ = next(iter)
-		print("\t\tparsing duration")
-		str.write_string(&output, ":")
-		if peek(iter,0).type == .NUM{
-			print("\t\tfound duration")
-			str.write_string(&output, peek(iter,0).str)
+	if peek(iter).type == .COLON{
+		print("\n\t\tparsing duration")
+		write(next(iter).str)
+		if peek(iter).type == .NUM{
+			print("\n\t\tfound duration")
+			write(next(iter).str)
 		} else {
 			print("\t\texpected numeric")
+			os.exit(1)
 		}
 	}
 
@@ -281,12 +298,12 @@ parse_macro_inl :: proc(iter: ^Iter, ast: ^Ast){assert(false)}
 	}
 
 parse_expr_group :: proc(iter: ^Iter, ast: ^Ast){
-	fmt.assertf(next(iter).type == .OPEN_BRACKET, "Internal error: expected [ when calling parse_expr_group, found %v instead", peek(iter,0)) // consume [
+	fmt.assertf(next(iter).type == .OPEN_BRACKET, "Internal error: expected [ when calling parse_expr_group, found %v instead", peek(iter)) // consume [
 	
 	for  {
-		for peek(iter,0).type == .NL{next(iter); print("consumed 1 nl"); write("\n")} // consume all newlines within []
-		if peek(iter,0).type == .CLOSE_BRACKET {print("ended expr group"); break}
-		print("\t\tnew iter in group loop", peek(iter,0))
+		for peek(iter).type == .NL{next(iter); print("consumed 1 nl"); write("\n")} // consume all newlines within []
+		if peek(iter).type == .CLOSE_BRACKET {print("ended expr group"); break}
+		print("\t\tnew iter in group loop", peek(iter))
 		parse_expr(iter,ast)
 	}
 	// consume ] token
@@ -305,7 +322,16 @@ Track	   :: struct{
 
 }
 
-parse_track :: proc(iter: ^Iter, ast: ^Ast){assert(false)}
+parse_track :: proc(iter: ^Iter, ast: ^Ast){
+	write("\ntrack ")
+	if peek(iter).type == .STRING{
+		write(fmt.aprintf("\"%v\"",next(iter).str ))
+	}
+
+	fmt.assertf(next(iter).type == .COLON, "Expected colon after track declaration, got <%v> instead", peek(iter,-1))
+	write(":")
+	pop_stack(&parse_stack)
+}
 
 // @end_track
 
@@ -326,14 +352,14 @@ parse_movement :: proc(iter: ^Iter, ast: ^Ast){
 	case .STRING :
 		print("\t","found tag for movement: ", peek(iter,-1))
 		fmt.assertf( next(iter).type == .COLON,  "Expected token colon after string in movement, got %v instead\n", peek(iter,-1))
-		next_t :=peek(iter, 0).type
-		for  next_t != .NL && next_t != .SEMICOLON{
+		for next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t = peek(iter, 0).type{
+			print("start parsing expr in movement")
 			parse_expr(iter,ast)
+			
 		}
 		write(";")
 	case .COLON :
 		print("just movement body")
-		next_t :=peek(iter, 0).type
 		for  next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t = peek(iter, 0).type{
 			print("start parsing expr in movement")
 			parse_expr(iter,ast)
@@ -345,7 +371,7 @@ parse_movement :: proc(iter: ^Iter, ast: ^Ast){
 		print("just nl")
 		_ = next(iter)
 	case :
-		print("shouldn't be this token:", peek(iter,0))
+		print("shouldn't be this token:", peek(iter))
 	}
 
 	pop_stack(&parse_stack)
@@ -369,24 +395,30 @@ Macro_def :: struct{
 	body	   : [dynamic]^Expr,
 }
 parse_macro_def :: proc(iter: ^Iter, ast: ^Ast){
-	name := next(iter)
-	write(name.str)
+	write(fmt.aprintf("macro %v:",next(iter).str))
+	
 	
 	#partial switch next(iter).type{
 	case .EQUAL: // there are no arguments
 		print("found equal, no arguments")
 		write("= ")
-
-		parse_expr(iter,ast)
-		write(";")
+	
 	case .OPEN_PAREN: // there are argumetns
-		write("(")
 		parse_args(iter,ast)
-		write(") = ")
+		write("= ")
 		fmt.assertf(next(iter).type == .EQUAL , "Expected equal after macro definition arguments, got %v indead",peek(iter,-1))
+		return
 	case : 
 		fmt.assertf(false, "Expected equal or open_paren after macro name, got %v instead", peek(iter,-1))
 	}
+
+	
+	for next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t =peek(iter, 0).type{
+		parse_expr(iter,ast)
+	}
+
+	write(";")
+	pop_stack(&parse_stack)
 }
 
 // @end_macro

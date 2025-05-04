@@ -247,7 +247,7 @@ tk_strl :: #force_inline proc(stream:^bio.Reader)->(start:int){
 		str_len+=1
 	}
 	append(&token_stream, Token{
-		str = string(stream.buf[start-1:start+str_len]),
+		str = string(stream.buf[start:start+str_len-1]),
 		line= curr_line,
 		n   = curr_n,
 		type= .STRING,
