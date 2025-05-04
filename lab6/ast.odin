@@ -5,12 +5,13 @@ import "core:fmt"
 import "base:runtime"
 import "core:os"
 import str"core:strings"
+import "core:strconv"
 
 ParseState :: enum {
 	// general
 	STATEMENT, EOF,
 	// statements
-	S_MACRO_DEF, S_MOVEMENT, S_TAGGED_M, S_TRACK,
+	S_MACRO_DEF, S_MOVEMENT, S_TRACK,
 	// collections
 	C_ARGS,	
 	
@@ -56,22 +57,21 @@ parse :: proc(tokens:[]Token)->(ast:Ast){
 		
 		switch peek_stack(&parse_stack){
 		// general
-		case .STATEMENT    : parse_statement(&iter,&ast); 
+		case .STATEMENT    : parse_statement(&iter,&ast)
 
 		// statements
-		case .S_MACRO_DEF  : parse_macro_def(&iter,&ast); 
-		case .S_MOVEMENT   : parse_movement(&iter,&ast); 
-		case .S_TAGGED_M   : parse_tagged_m(&iter,&ast); 
-		case .S_TRACK	   : parse_track(&iter,&ast); 
+		case .S_MACRO_DEF  : parse_macro_def(&iter,&ast)
+		case .S_MOVEMENT   : parse_movement(&iter,&ast)
+		case .S_TRACK	   : parse_track(&iter,&ast)
 
 		// collections
-		case .C_ARGS       : parse_args(&iter,&ast); 
+		case .C_ARGS       : parse_args(&iter,&ast)
 
 		// Expressions
-		case .E_MACRO_APL  : parse_macro_apl(&iter,&ast); 
-		case .E_MACRO_INL  : parse_macro_inl(&iter,&ast); 
+		case .E_MACRO_APL  : parse_macro_apl(&iter,&ast)
+		case .E_MACRO_INL  : parse_macro_inl(&iter,&ast)
 		// Error states
-		case .ERR	   : parse_err(&iter,&ast); 
+		case .ERR	   : parse_err(&iter,&ast)
 
 		case .EOF          : break loop
 		}
@@ -88,22 +88,20 @@ parse :: proc(tokens:[]Token)->(ast:Ast){
 Ast :: struct {
 	statements  : [dynamic]Statement,
 	definitions : map[string]Identifier,
-	no_header   : bool,
 
-	errors	    : [dynamic]ParseError
+	errors	    : [dynamic]ParseError,
 }
 
 Identifier :: struct{
-	def  : ^Statement,
+	def  : int, // index in statements
 	type : IdentType,
 }
 
 
 IdentType :: enum{
+	unresolved,
 	macro,
 	track,
-	set,
-	keyword,
 	note,
 	instrument,
 }
@@ -113,7 +111,6 @@ Statement :: union{
 	Macro_def,
 	Track,
 	Movement,
-	Tagged_movement,
 }
 
 parse_statement :: proc(iter: ^Iter, ast: ^Ast){
@@ -186,20 +183,22 @@ parse_statement :: proc(iter: ^Iter, ast: ^Ast){
 
 // @expr
 
-Expr :: struct{
-	this : Any_expr,
-	next : ^Expr,
+Expr :: union{
+	UK_IDENT,
+	Note,
+	Macro,
+	Expr_group,
 }
 
-parse_expr :: proc(iter: ^Iter, ast: ^Ast){
+parse_expr :: proc(iter: ^Iter, ast: ^Ast)->(expr: Expr){
+	
+
 	print("\tparsing expression: ", peek(iter))
 	#partial switch peek(iter).type{
-	// case .SEMICOLON : 
-	//
 	case .OPEN_BRACKET : 
 		write("[")
 		print("\tnow try parsing expr group")
-		parse_expr_group(iter,ast)
+		expr = parse_expr_group(iter,ast)
 	case .CLOSE_BRACKET:
 		print("\tshouldnt get here")
 		os.exit(1)
@@ -207,12 +206,13 @@ parse_expr :: proc(iter: ^Iter, ast: ^Ast){
 	case .NOTE_DO ..= .NOTE_SI : 
 		print("\tnow try parsing note: ", peek(iter).type)
 		fmt.assertf(peek(iter).type != .NL, "a nl isnt a note")
-		parse_note(iter,ast)
+		expr = parse_note(iter,ast)
 	case .NL , .SEMICOLON:
 		print("\tnot an expression: ", peek(iter) )
 		os.exit(1)
 	case .ALPHANUM, .NUM:
 		print("\tprobably an expression: ",peek(iter))
+		expr = UK_IDENT{peek(iter)}
 		write(next(iter).str)
 		write(" ")
 	case .LESS_THAN, .GREATER_THAN :
@@ -229,43 +229,39 @@ parse_expr :: proc(iter: ^Iter, ast: ^Ast){
 	}
 
 	write(" ")
+
+	return
 }
-Any_expr :: union{
-	Note,
-	Macro,
-	Expr_group,
-	// NOTE: These exist only at the parsing step, they are unpacked within the ast
-	// Sem_group, 
-	// repetition,
-}
+
 //{
 	Note :: struct{
-		note     : string,
-		octave   : u8,
 		duration : u64,
-		mode	 : Note_mode,
+		note     : string,
+		pitch	 : i8,
+		octave   : u8,
 	}
-	//{
-		Note_mode :: enum{
-			neutral,
-			hold   ,
-			release,
-		}
-	//}
-parse_note :: proc(iter: ^Iter, ast: ^Ast){
+
+parse_note :: proc(iter: ^Iter, ast: ^Ast)->(note:Note){
 	write("$")
 	print("note: ", peek(iter))
+	note.note = peek(iter).str
 	write(next(iter).str)
 
 	for curr := peek(iter); 
 	    curr.type == .PLUS  || curr.type == .DASH; 
 	    curr = peek(iter)  {
+		if curr.type == .PLUS{
+			note.pitch +=1
+		} else {
+			note.pitch -=1
+		}
 		write(next(iter).str)
 	}
 
 
 	if peek(iter).type == .NUM{
 		print("\n\t\tfound octave", peek(iter).str )
+		note.octave = auto_cast strconv.atoi(peek(iter).str)
 		write(next(iter).str)
 	}
 	
@@ -274,20 +270,21 @@ parse_note :: proc(iter: ^Iter, ast: ^Ast){
 		write(next(iter).str)
 		if peek(iter).type == .NUM{
 			print("\n\t\tfound duration")
+			note.duration = auto_cast strconv.atoi(peek(iter).str)
 			write(next(iter).str)
 		} else {
 			print("\t\texpected numeric")
 			os.exit(1)
 		}
 	}
-
+	return
 }
 
 
-	Macro :: struct{
-		name : string,
-		args : Maybe([dynamic]string),
-	}
+Macro :: struct{
+	name : string,
+	args : [dynamic]string,
+}
 parse_macro_apl :: proc(iter: ^Iter, ast: ^Ast){
 	assert(false)
 }
@@ -297,21 +294,31 @@ parse_macro_inl :: proc(iter: ^Iter, ast: ^Ast){assert(false)}
 		exprs : [dynamic]Expr,
 	}
 
-parse_expr_group :: proc(iter: ^Iter, ast: ^Ast){
+parse_expr_group :: proc(iter: ^Iter, ast: ^Ast)->(group: Expr_group){
+	group.exprs = make([dynamic]Expr)
+
 	fmt.assertf(next(iter).type == .OPEN_BRACKET, "Internal error: expected [ when calling parse_expr_group, found %v instead", peek(iter)) // consume [
 	
 	for  {
 		for peek(iter).type == .NL{next(iter); print("consumed 1 nl"); write("\n")} // consume all newlines within []
 		if peek(iter).type == .CLOSE_BRACKET {print("ended expr group"); break}
 		print("\t\tnew iter in group loop", peek(iter))
-		parse_expr(iter,ast)
+		append_elem(&group.exprs,parse_expr(iter,ast))
 	}
 	// consume ] token
 	write(next(iter).str)
+
+	return
 }
 
 	
 //}
+
+
+UK_IDENT :: struct{
+	source: Token,
+}
+
 // @end_expr
 
 // @track
@@ -348,10 +355,13 @@ parse_movement :: proc(iter: ^Iter, ast: ^Ast){
 	instrument := next(iter)
 	print("\t","found instrument ", instrument)
 	write(instrument.str)
-	#partial switch next(iter).type{
+	#partial switch peek(iter).type{
 	case .STRING :
-		print("\t","found tag for movement: ", peek(iter,-1))
-		fmt.assertf( next(iter).type == .COLON,  "Expected token colon after string in movement, got %v instead\n", peek(iter,-1))
+		print("\t","found tag for movement: ", peek(iter))
+		write(fmt.aprintf("\"%v\"", next(iter).str) )
+
+		fmt.assertf( peek(iter).type == .COLON,  "Expected token colon after string in movement, got %v instead\n", peek(iter))
+		write(next(iter).str)
 		for next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t = peek(iter, 0).type{
 			print("start parsing expr in movement")
 			parse_expr(iter,ast)
@@ -360,30 +370,23 @@ parse_movement :: proc(iter: ^Iter, ast: ^Ast){
 		write(";")
 	case .COLON :
 		print("just movement body")
+		write(next(iter).str)
 		for  next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t = peek(iter, 0).type{
 			print("start parsing expr in movement")
 			parse_expr(iter,ast)
 			
 		}
 		write(";")
-
-	case .NL :
-		print("just nl")
-		_ = next(iter)
 	case :
 		print("shouldn't be this token:", peek(iter))
+		os.exit(1)
 	}
 
 	pop_stack(&parse_stack)
 
 }
 
-Tagged_movement :: struct{
-	instrument : string,
-	tag	   : string,
-}
 
-parse_tagged_m :: proc(iter: ^Iter, ast: ^Ast){assert(false)}
 
 // @end_movement
 
@@ -391,22 +394,27 @@ parse_tagged_m :: proc(iter: ^Iter, ast: ^Ast){assert(false)}
 // @macro
 Macro_def :: struct{
 	identifier : string,
-	args	   : Maybe([dynamic]string),
-	body	   : [dynamic]^Expr,
+	args	   : [dynamic]string,
+	body	   : [dynamic]Expr,
 }
-parse_macro_def :: proc(iter: ^Iter, ast: ^Ast){
+parse_macro_def :: proc(iter: ^Iter, ast: ^Ast) -> (macro: ^Macro_def){
+	macro = new(Macro_def)
+	macro.args = make([dynamic]string)
+	macro.body = make([dynamic]Expr)
 	write(fmt.aprintf("macro %v:",next(iter).str))
 	
 	
-	#partial switch next(iter).type{
+	#partial switch peek(iter).type{
 	case .EQUAL: // there are no arguments
 		print("found equal, no arguments")
 		write("= ")
+		_ = next(iter) // consume token
 	
 	case .OPEN_PAREN: // there are argumetns
-		parse_args(iter,ast)
+		macro.args = parse_args(iter,ast)
+		fmt.assertf(peek(iter).type == .EQUAL , "Expected equal after macro definition arguments, got %v indead",peek(iter))
 		write("= ")
-		fmt.assertf(next(iter).type == .EQUAL , "Expected equal after macro definition arguments, got %v indead",peek(iter,-1))
+		_ = next(iter)
 		return
 	case : 
 		fmt.assertf(false, "Expected equal or open_paren after macro name, got %v instead", peek(iter,-1))
@@ -414,11 +422,13 @@ parse_macro_def :: proc(iter: ^Iter, ast: ^Ast){
 
 	
 	for next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t =peek(iter, 0).type{
-		parse_expr(iter,ast)
+		append(&macro.body,parse_expr(iter,ast))
 	}
 
 	write(";")
 	pop_stack(&parse_stack)
+
+	return
 }
 
 // @end_macro
@@ -433,7 +443,10 @@ CapGroup :: struct{
 
 }
 
-parse_args :: proc(iter: ^Iter, ast: ^Ast){assert(false)}
+parse_args :: proc(iter: ^Iter, ast: ^Ast)->(args:[dynamic]string){
+	assert(false)
+	return
+}
 
 
 

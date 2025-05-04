@@ -8,5 +8,7 @@ main :: proc(){
 	tokens := tokenize(source)
 	print_tokens(false)
 	ast := parse(tokens[:])
+
+	_ = ast
 	fmt.println("output", str.to_string(output))
 }

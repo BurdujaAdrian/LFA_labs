@@ -1,1 +1,1 @@
-odin build . --strict-style -o:speed
+odin build . --strict-style -o:speed -vet

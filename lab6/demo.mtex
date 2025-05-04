@@ -6,7 +6,7 @@ lady = mi do:4
 
 track "london bridge" :
 
-piano: [
+piano "main": [
     london_bridge_is | falling_down | falling_down2 | falling_down |
     london_bridge_is | falling_down |    my_fair    |      lady    |
 ]

@@ -2,15 +2,12 @@ package main
 
 import "core:fmt"
 
-import "core:io"
 import bio"core:bufio"
 import "core:os"
 
-import str"core:strings"
 import "core:bytes"
 //import small"core:container/small_array"
 
-import "core:log"
 import "core:testing"
 when ODIN_DEBUG {print :: fmt.println
 		printf :: fmt.printf
@@ -67,7 +64,7 @@ piano : macro | macro2(do b b, mi)
 	}
 
 	append(&token_stream, Token{
-		"eof",curr_line+1,0, .EOF
+		"eof",curr_line+1,0, .EOF,
 	})
 
 	print_tokens(false)
@@ -92,7 +89,7 @@ curr_line:int
 
 tokenize :: proc(source:[]u8)->(ts:[]Token){
 	append(&token_stream, Token{
-		"start",0,0, .START
+		"start",0,0, .START,
 	})
 
 	_stream:bio.Reader
@@ -125,7 +122,7 @@ tokenize :: proc(source:[]u8)->(ts:[]Token){
 	}
 
 	append(&token_stream, Token{
-		"eof",curr_line+1,0, .EOF
+		"eof",curr_line+1,0, .EOF,
 	})
 
 	
@@ -273,10 +270,10 @@ tk_numr :: #force_inline proc(stream:^bio.Reader)->(start:int){
 
 		switch curr {
 		case '\n' : 
-			curr_line+=1; 
-			prev_n = curr_n; 
-			curr_n = 0; 
-			found_nl = true; 
+			curr_line+=1
+			prev_n = curr_n
+			curr_n = 0
+			found_nl = true
 			break loop
 		case ' ','\t', '\r': num_len-=1; break loop
 		case '0'..='9': continue
