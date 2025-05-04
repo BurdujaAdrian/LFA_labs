@@ -38,7 +38,6 @@ print_ast :: proc(ast:^Ast){
 	fmt.println()
 	fmt.println("Definitions:")
 	fmt.printf("%#v",ast.def)
-	todo("finish print_ast")
 }
 
 
@@ -61,6 +60,8 @@ Ast :: struct {
 	def : map[string]Idt,
 
 	errors	    : [dynamic]ParseError,
+
+	last_track_id : int,
 }
 
 parse :: proc(tokens:[]Token)->(ast:Ast){
@@ -88,13 +89,36 @@ parse :: proc(tokens:[]Token)->(ast:Ast){
 		// statements
 		case .S_MACRO_DEF  : 
 			new_mac,new_name := parse_macro_def(&iter,&ast)
+			
 			decl, declared := ast.def[new_name]
 			fmt.assertf(!declared, "Redeclaration of identifier: %v, previously: %v",new_mac,decl)
+			
 			append(&ast.sments, new_mac)
 			ast.def[new_name] = Idt{len(ast.sments) -1, .macro }
 
-		case .S_MOVEMENT   : parse_movement(&iter,&ast)
-		case .S_TRACK	   : parse_track(&iter,&ast)
+		case .S_MOVEMENT   : 
+			new_mov, new_name := parse_movement(&iter,&ast)
+			
+			decl, declared := ast.def[new_name]
+			fmt.assertf(!declared,"Redeclaration of identifier: %v, previously:%v",new_mov, decl)
+
+			// append new movement
+			append(&ast.sments, new_mov)
+			ast.def[new_name] = Idt{len(ast.sments) -1, .mov}
+
+			// append new id of movement
+			last_track: ^Track = &(&ast.sments[ast.last_track_id]).(Track)
+			append(&last_track.body, len(ast.sments) - 1)
+		case .S_TRACK	   : 
+			new_track, new_name := parse_track(&iter,&ast)
+
+			decl, declared := ast.def[new_name]
+			fmt.assertf(!declared, "REdeclaration of track name: %v, prev %v", new_track, decl)
+
+			append(&ast.sments, new_track)
+			id:=len(ast.sments) - 1
+			ast.def[new_name] = Idt{id, .track}
+			ast.last_track_id = id
 
 		// collections
 		case .C_ARGS       : parse_args(&iter,&ast)
@@ -195,11 +219,16 @@ parse_statement :: proc(iter: ^Iter, ast: ^Ast){
 
 // @expr
 
+Ch_oct :: struct{source:Token,val:int}
+Pipe :: struct{source:Token}
+
 Expr :: union{
 	UK_IDENT,
 	Note,
 	Macro,
 	Expr_group,
+	Pipe,
+	Ch_oct,
 }
 
 parse_expr :: proc(iter: ^Iter, ast: ^Ast)->(expr: Expr){
@@ -229,10 +258,16 @@ parse_expr :: proc(iter: ^Iter, ast: ^Ast)->(expr: Expr){
 		write(" ")
 	case .LESS_THAN, .GREATER_THAN :
 		print("\tthis is an expression: ",peek(iter).str)
+
+		expr = Ch_oct{
+			peek(iter),
+			cast(int)(peek(iter).type == .GREATER_THAN)*2 - 1,
+		}
 		write(next(iter).str)
 		write(" ")
 	case .PIPE:
 		print("\tjust a pipe")
+		expr = Pipe{peek(iter)}
 		write(fmt.aprintf(" %v ",next(iter).str))
 
 	case :
@@ -339,21 +374,29 @@ UK_IDENT :: struct{
 
 Track	   :: struct{
 	name	   : string,
-	body	   : [dynamic]Statement,
+	body	   : [dynamic]int,//ids of movements
 
 }
 
-parse_track :: proc(iter: ^Iter, ast: ^Ast){
+parse_track :: proc(iter: ^Iter, ast: ^Ast)->(track:Track, name:string){
+	track.body = make([dynamic]int)
+	track.name = "global"
 	_ = next(iter) // consume track token
 	write("\ntrack ")
 	if peek(iter).type == .STRING{
+		track.name = peek(iter).str
+
 		write(fmt.aprintf("\"%v\"",next(iter).str ))
 	}
 
 	fmt.assertf(peek(iter).type == .COLON, "Expected colon after track declaration, got <%v> instead", peek(iter))
 	_ = next(iter)
 	write(":")
+
+	name = track.name
 	pop_stack(&parse_stack)
+
+	return
 }
 
 // @end_track
@@ -362,25 +405,30 @@ parse_track :: proc(iter: ^Iter, ast: ^Ast){
 
 Movement :: struct{
 	instrument : string,
-
+	tag : string,
+	expr: [dynamic]Expr,
 }
 
-parse_movement :: proc(iter: ^Iter, ast: ^Ast){
+parse_movement :: proc(iter: ^Iter, ast: ^Ast)->(mov:Movement,name:string){
+	mov.expr = make([dynamic]Expr)
 
-	print("\t")
+	mov.instrument = peek(iter).str
+	mov.tag = mov.instrument
+
 	instrument := next(iter)
 	print("\t","found instrument ", instrument)
 	write(instrument.str)
 	#partial switch peek(iter).type{
 	case .STRING :
 		print("\t","found tag for movement: ", peek(iter))
+		mov.tag = peek(iter).str
 		write(fmt.aprintf("\"%v\"", next(iter).str) )
 
 		fmt.assertf( peek(iter).type == .COLON,  "Expected token colon after string in movement, got %v instead\n", peek(iter))
 		write(next(iter).str)
 		for next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t = peek(iter, 0).type{
 			print("start parsing expr in movement")
-			parse_expr(iter,ast)
+			append(&mov.expr,parse_expr(iter,ast))
 			
 		}
 		write(";")
@@ -398,7 +446,14 @@ parse_movement :: proc(iter: ^Iter, ast: ^Ast){
 		os.exit(1)
 	}
 
+	// namespacing the mov to the track
+	last_track := ast.sments[ast.last_track_id].(Track).name
+	mov.tag = fmt.aprintf("%v_%v",last_track,mov.tag)
+	name = mov.tag
+
 	pop_stack(&parse_stack)
+
+	return
 
 }
 
