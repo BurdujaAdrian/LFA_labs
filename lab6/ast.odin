@@ -6,6 +6,7 @@ import "base:runtime"
 import "core:os"
 import str"core:strings"
 import "core:strconv"
+import "core:slice"
 
 ParseState :: enum {
 	// general
@@ -28,23 +29,46 @@ output : str.Builder
 parse_stack :[dynamic]ParseState
 
 
-
 print_ast :: proc(ast:^Ast){
+	
 	fmt.println("Statements:")
-	for statement in ast.statements{
-		fmt.println(statement)
+	for statement in ast.sments{
+		fmt.printf("%#v",statement)
 	}
 	fmt.println()
 	fmt.println("Definitions:")
-	fmt.printf("%#v",ast.definitions)
+	fmt.printf("%#v",ast.def)
+	todo("finish print_ast")
+}
+
+
+IdentType :: enum{
+	unresolved,
+	macro,
+	track,
+	mov,
+	note,
+	instrument,
+}
+Idt :: struct{
+	def  : int, // index in statements
+	type : IdentType,
+}
+
+
+Ast :: struct {
+	sments  : [dynamic]Statement,
+	def : map[string]Idt,
+
+	errors	    : [dynamic]ParseError,
 }
 
 parse :: proc(tokens:[]Token)->(ast:Ast){
 	str.builder_init(&output)
 	print("\nParsing")
 	ast.errors	= make([dynamic]ParseError)
-	ast.statements  = make([dynamic]Statement)
-	ast.definitions = make(map[string]Identifier)
+	ast.sments  = make([dynamic]Statement)
+	ast.def = make(map[string]Idt)
 
 	iter := Iter{tokens,0}
 
@@ -57,10 +81,18 @@ parse :: proc(tokens:[]Token)->(ast:Ast){
 		
 		switch peek_stack(&parse_stack){
 		// general
-		case .STATEMENT    : parse_statement(&iter,&ast)
+		case .STATEMENT    :
+			parse_statement(&iter,&ast)
+			
 
 		// statements
-		case .S_MACRO_DEF  : parse_macro_def(&iter,&ast)
+		case .S_MACRO_DEF  : 
+			new_mac,new_name := parse_macro_def(&iter,&ast)
+			decl, declared := ast.def[new_name]
+			fmt.assertf(!declared, "Redeclaration of identifier: %v, previously: %v",new_mac,decl)
+			append(&ast.sments, new_mac)
+			ast.def[new_name] = Idt{len(ast.sments) -1, .macro }
+
 		case .S_MOVEMENT   : parse_movement(&iter,&ast)
 		case .S_TRACK	   : parse_track(&iter,&ast)
 
@@ -85,26 +117,9 @@ parse :: proc(tokens:[]Token)->(ast:Ast){
 	return
 }
 
-Ast :: struct {
-	statements  : [dynamic]Statement,
-	definitions : map[string]Identifier,
-
-	errors	    : [dynamic]ParseError,
-}
-
-Identifier :: struct{
-	def  : int, // index in statements
-	type : IdentType,
-}
 
 
-IdentType :: enum{
-	unresolved,
-	macro,
-	track,
-	note,
-	instrument,
-}
+
 
 // @statement
 Statement :: union{
@@ -157,11 +172,9 @@ parse_statement :: proc(iter: ^Iter, ast: ^Ast){
 		#partial switch peek(iter,1).type{
 		case .COLON: 
 			append(&parse_stack, ParseState.S_TRACK)
-			return
 		case .STRING: 
-			expect(iter, .COLON)
+			fmt.assertf(peek(iter,1).type != .COLON, "Expected : token after string when defining track, got %v instead", peek(iter,1))
 			append(&parse_stack, ParseState.S_TRACK)
-			return
 		}
 
 	case .EOF: 
@@ -177,7 +190,6 @@ parse_statement :: proc(iter: ^Iter, ast: ^Ast){
 		fmt.assertf(false, "expected kw_track for track, alphanum for movement or macro or eof, got: %v ",peek(iter).str) 
 		
 	}
-
 }
 // @end_statement
 
@@ -259,7 +271,9 @@ parse_note :: proc(iter: ^Iter, ast: ^Ast)->(note:Note){
 	}
 
 
-	if peek(iter).type == .NUM{
+	if peek(iter).type == .DOT{
+		write(next(iter).str) // consume and write .
+		fmt.assertf(peek(iter).type == .NUM, "Expected number after . in note literals, got : %v instead", peek(iter).str)
 		print("\n\t\tfound octave", peek(iter).str )
 		note.octave = auto_cast strconv.atoi(peek(iter).str)
 		write(next(iter).str)
@@ -330,12 +344,14 @@ Track	   :: struct{
 }
 
 parse_track :: proc(iter: ^Iter, ast: ^Ast){
+	_ = next(iter) // consume track token
 	write("\ntrack ")
 	if peek(iter).type == .STRING{
 		write(fmt.aprintf("\"%v\"",next(iter).str ))
 	}
 
-	fmt.assertf(next(iter).type == .COLON, "Expected colon after track declaration, got <%v> instead", peek(iter,-1))
+	fmt.assertf(peek(iter).type == .COLON, "Expected colon after track declaration, got <%v> instead", peek(iter))
+	_ = next(iter)
 	write(":")
 	pop_stack(&parse_stack)
 }
@@ -392,15 +408,19 @@ parse_movement :: proc(iter: ^Iter, ast: ^Ast){
 
 
 // @macro
+
 Macro_def :: struct{
-	identifier : string,
-	args	   : [dynamic]string,
+	iden : string,
+	args	   : map[string][dynamic]int,
 	body	   : [dynamic]Expr,
 }
-parse_macro_def :: proc(iter: ^Iter, ast: ^Ast) -> (macro: ^Macro_def){
-	macro = new(Macro_def)
-	macro.args = make([dynamic]string)
+parse_macro_def :: proc(iter: ^Iter, ast: ^Ast) -> (macro: Macro_def, name:string){
+	macro.args = make(map[string][dynamic]int)
 	macro.body = make([dynamic]Expr)
+
+	name = peek(iter).str
+	macro.iden = name
+	
 	write(fmt.aprintf("macro %v:",next(iter).str))
 	
 	
@@ -414,15 +434,20 @@ parse_macro_def :: proc(iter: ^Iter, ast: ^Ast) -> (macro: ^Macro_def){
 		macro.args = parse_args(iter,ast)
 		fmt.assertf(peek(iter).type == .EQUAL , "Expected equal after macro definition arguments, got %v indead",peek(iter))
 		write("= ")
-		_ = next(iter)
+		_ = next(iter) // consume open paren
 		return
 	case : 
-		fmt.assertf(false, "Expected equal or open_paren after macro name, got %v instead", peek(iter,-1))
+		fmt.assertf(false, "Expected equal or open_paren after macro name, got %v instead", peek(iter))
 	}
 
+	keys,_:= slice.map_keys(macro.args)
+	has_keys:= len(keys) > 0
 	
 	for next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t =peek(iter, 0).type{
 		append(&macro.body,parse_expr(iter,ast))
+		if !has_keys {continue}
+
+		todo("write code that finds if the last expr is an arg")
 	}
 
 	write(";")
@@ -443,9 +468,10 @@ CapGroup :: struct{
 
 }
 
-parse_args :: proc(iter: ^Iter, ast: ^Ast)->(args:[dynamic]string){
-	assert(false)
-	return
+parse_args :: proc(iter: ^Iter, ast: ^Ast)->(args:map[string][dynamic]int){
+	args = make(map[string][dynamic]int)
+	
+	todo("Make the parse args fucn")
 }
 
 
@@ -530,12 +556,19 @@ expect :: #force_inline proc(iter:^Iter,tk_type: Token_type)->bool{
 // @end_errors
 
 write :: #force_inline proc(_str:string){
-	_str := _str
-	if _str == "\r"{
-		_str = "\n"	
+	when ODIN_DEBUG{
+		_str := _str
+		if _str == "\r"{
+			_str = "\n"	
+		}
+		print("\nwriting \"", _str, "\"")
+		n := str.write_string(&output, _str)
+		fmt.assertf(n == len(_str), "write didnt write enough bytes, only %d",n)
+		print("buff after writing: ```\n", str.to_string(output),"\n```\n")
 	}
-	print("\nwriting \"", _str, "\"")
-	n := str.write_string(&output, _str)
-	fmt.assertf(n == len(_str), "write didnt write enough bytes, only %d",n)
-	print("buff after writing: ```\n", str.to_string(output),"\n```\n")
+}
+
+todo :: #force_inline proc($msg:string)->!{
+	fmt.print(msg)
+	os.exit(1)
 }

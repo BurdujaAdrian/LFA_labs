@@ -9,6 +9,6 @@ main :: proc(){
 	print_tokens(false)
 	ast := parse(tokens[:])
 
-	_ = ast
+	print_ast(&ast)
 	fmt.println("output", str.to_string(output))
 }
