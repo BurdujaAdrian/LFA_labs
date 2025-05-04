@@ -188,8 +188,11 @@ parse_statement :: proc(iter: ^Iter, ast: ^Ast){
 		case .COLON: 
 			append(&parse_stack, ParseState.S_TRACK)
 		case .STRING: 
-			fmt.assertf(peek(iter,1).type != .COLON, "Expected : token after string when defining track, got %v instead", peek(iter,1))
+			fmt.assertf(peek(iter,2).type == .COLON, "Expected \":\" token after string when defining track, got %v instead", peek(iter,2))
 			append(&parse_stack, ParseState.S_TRACK)
+		case :
+			fmt.assertf(false, "Expected \":\" or string, found: %v instead ",peek(iter,1))
+
 		}
 
 	case .EOF: 
@@ -213,9 +216,7 @@ parse_statement :: proc(iter: ^Iter, ast: ^Ast){
 Ch_oct :: struct{source:Token,val:int}
 Pipe :: struct{source:Token}
 
-Ident :: struct{
-	source: Token,
-}
+Ident :: struct{source: Token}
 Expr :: union{
 	Ident,
 	Note,
@@ -426,7 +427,7 @@ parse_movement :: proc(iter: ^Iter, ast: ^Ast)->(mov:Movement,name:string){
 
 		fmt.assertf( peek(iter).type == .COLON,  "Expected token colon after string in movement, got %v instead\n", peek(iter))
 		write(next(iter).str)
-		for next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t = peek(iter, 0).type{
+		for next_t :=peek(iter).type; next_t != .NL && next_t != .SEMICOLON; next_t = peek(iter).type{
 			print("start parsing expr in movement")
 			append(&mov.expr,parse_expr(iter,ast))
 			
@@ -435,7 +436,7 @@ parse_movement :: proc(iter: ^Iter, ast: ^Ast)->(mov:Movement,name:string){
 	case .COLON :
 		print("just movement body")
 		write(next(iter).str)
-		for  next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t = peek(iter, 0).type{
+		for  next_t :=peek(iter).type; next_t != .NL && next_t != .SEMICOLON; next_t = peek(iter).type{
 			print("start parsing expr in movement")
 			parse_expr(iter,ast)
 			
@@ -497,14 +498,15 @@ parse_macro_def :: proc(iter: ^Iter, ast: ^Ast) -> (macro: Macro_def, name:strin
 	keys,_:= slice.map_keys(macro.args)
 	has_keys:= len(keys) > 0
 	
-	for next_t :=peek(iter, 0).type; next_t != .NL && next_t != .SEMICOLON; next_t =peek(iter, 0).type{
+	for next_t :=peek(iter).type; next_t != .NL && next_t != .SEMICOLON; next_t =peek(iter).type{
 		append(&macro.body,parse_expr(iter,ast))
 		if !has_keys {continue}
 
 		curr_expr:= macro.body[len(macro.body)-1]
 		if ident,ok := curr_expr.(Ident); ok{
-			if _,ok := macro.args[ident.source.str]; ok{
-				
+			if _,ok2 := macro.args[ident.source.str]; ok2{
+				pos := &macro.args[ident.source.str]
+				append(pos, len(macro.body) - 1)
 			} else {
 				macro.args[ident.source.str] = make([dynamic]int)
 				pos := &macro.args[ident.source.str]
@@ -520,16 +522,6 @@ parse_macro_def :: proc(iter: ^Iter, ast: ^Ast) -> (macro: Macro_def, name:strin
 }
 
 // @end_macro
-
-
-
-
-
-// @Groups
-
-CapGroup :: struct{
-
-}
 
 parse_args :: proc(iter: ^Iter, ast: ^Ast)->(argv:[dynamic]Expr,args:map[string][dynamic]int){
 	args = make(map[string][dynamic]int)
@@ -610,12 +602,6 @@ peek :: #force_inline proc(iter:^Iter,n:int = 0)->Token{
 	return iter.tokens[iter.i+n]
 }
 
-back :: #force_inline proc(iter:^Iter){
-	switch iter.i{
-	case 0: return
-	case : iter.i -=1
-	}
-}
 
 wait_enter :: proc(){
 	when ODIN_DEBUG {
